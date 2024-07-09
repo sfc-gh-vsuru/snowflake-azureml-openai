@@ -1,24 +1,79 @@
-## Stub readme file
+# Snowflake Integration with Azure OpenAI using External Access
 
-This is a *stub* readme file to descibe your project
+### Prerequisites
 
-Please update it with contact information for your repository and team.
+1. **This guide is a continuation from the below Quickstart Guide**
 
-Formatting help can be found at [github](https://help.github.com/en/github/writing-on-github/basic-writing-and-formatting-syntax)
+   **Note: Follow the QS guide from Step 1 to Step 3**
+   Save the Azure Resource Name, API Key and model/deployment name
 
-## Requirements for private repositories
+   [Quickstart Link](https://quickstarts.snowflake.com/guide/getting_started_with_azure_openai_streamlit_and_snowflake_for_image_use_cases/index.html?index=..%2F..index#0)
 
-If this repository is intended to be private, please see the [CM requirements](https://snowflakecomputing.atlassian.net/wiki/spaces/~367958958/pages/671909031/Creating+a+new+repository)
+2. **Snowpark External Access to call Azure OpenAI - Step 4**
 
-## Metadata Requirements
+   **Note: Follow the below steps for Azure API using hosted OpenAI instead of Step 4 in the above Quickstart**
 
-This repository must have a metadata file located at `/.github/repo_meta.yaml`. This template repository already includes [that file](./.github/repo_meta.yaml).
+   Below script we would be creating External Access and UDF to make Azure API calls.
+   Open a new SQL Worksheet in Snowsight, Paste the below code into the worksheet, update the values from your Azure account and click run
 
-In addition to having a metadata file, this repository must define the following metadata in the metadata file:
-* `production` - set this field to `true` if this repository is used to develop, build, or deploy production services. Set this field to `false` otherwise. `true` is the default setting.
-* `point_of_contact` - set this field to the GitHub user or team that should be the point of contact for this repository.
-* `distributed` - set this field to true if code from this repository (including binaries created from this repository) is downloaded by or onto non-Snowflake computers”. Set this field to `false` otherwise. `false` is the default setting. For more information, please check [Snowflake Open Source Policy](https://docs.google.com/document/d/1lsyiafPrn_j5X10hMl62S6cVn26ru_Oxbnh9L6tgav4)
-* `modified` - set this filed to `true` if the open source code in the repository is modified in anyway. Set this field to `false` otherwise. `false` is the default setting. 
-* `code_owners_file_present` - set this field to `true` if this repository includes a code owners file. Set this field to `false` otherwise. `true` is the default setting.
-* `jira_project_issue_type` - set this field with jira project and related issue type (e.g., `SNOW/BUG`). 
-* `jira_area` - set this field with jira project area (e.g., `Data Platform: Ecosystem`). 
+```sql
+use role ACCOUNTADMIN;
+use database RETAIL_HOL;
+use warehouse HOL_WH;
+
+CREATE OR REPLACE NETWORK RULE CHATGPT_NETWORK_RULE
+    MODE = EGRESS
+    TYPE = HOST_PORT
+    VALUE_LIST = ('{your-resource-name}.openai.azure.com'); -- Update your Azure resource name from Step 2
+
+CREATE OR REPLACE SECRET CHATGPT_API_KEY
+    TYPE = GENERIC_STRING
+    SECRET_STRING='YOUR_API_KEY'; -- Update your Azure API Key from Step 2
+
+CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION OPENAI_INTEGRATION
+    ALLOWED_NETWORK_RULES = (CHATGPT_NETWORK_RULE)
+    ALLOWED_AUTHENTICATION_SECRETS = (CHATGPT_API_KEY)
+    ENABLED=TRUE;
+
+CREATE OR REPLACE FUNCTION CHATGPT_IMAGE(instructions STRING, list STRING, user_context STRING)
+returns string
+language python
+runtime_version=3.8
+handler = 'ask_chatGPT'
+external_access_integrations=(OPENAI_INTEGRATION)
+packages = ('openai')
+SECRETS = ('cred' = chatgpt_api_key )
+as
+$$
+import _snowflake
+import json
+from openai import AzureOpenAI
+client = AzureOpenAI(
+    api_key=_snowflake.get_generic_secret_string("cred"),
+    api_version='2023-12-01-preview',
+    base_url="https://{your-resource-name}.openai.azure.com/openai/deployments/{model}/extensions" -- Update Resource and Model
+    )
+def ask_chatGPT(instructions, list_, user_context):
+    response = client.chat.completions.create(
+    model='{model}', -- Update your model/deployment name from Step 2
+    messages = [
+        {
+            "role": "system",
+            "content": json.dumps({
+                "SYSTEM": f"Follow these: {instructions}",
+                "CONTEXT_LIST": f"Use this list to select from {list_}",
+                "USER_CONTEXT": f"Use this image for your response: {user_context}"
+            })
+        }
+    ],
+    max_tokens=2000 )
+    return response.choices[0].message.content
+$$;
+
+```
+
+3. **Follow the Quickstart - Step 5 Build Streamlit App and the remaining steps in the QS**
+
+   [Quickstart Link](https://quickstarts.snowflake.com/guide/getting_started_with_azure_openai_streamlit_and_snowflake_for_image_use_cases/index.html?index=..%2F..index#4)
+
+### This Concludes setup and working with Snowflake External Access with Azure OpenAI
