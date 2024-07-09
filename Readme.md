@@ -51,7 +51,8 @@ from openai import AzureOpenAI
 client = AzureOpenAI(
     api_key=_snowflake.get_generic_secret_string("cred"),
     api_version='2023-12-01-preview',
-    base_url="https://{your-resource-name}.openai.azure.com/openai/deployments/{model}/extensions" -- Update Resource and Model
+    -- Update Resource and Model to the base_url below
+    base_url="https://{your-resource-name}.openai.azure.com/openai/deployments/{model}/extensions"
     )
 def ask_chatGPT(instructions, list_, user_context):
     response = client.chat.completions.create(
